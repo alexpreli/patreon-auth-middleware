@@ -1,0 +1,246 @@
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import org.json.JSONObject;
+
+/**
+ * Example usage of Patreon Auth Middleware in Java
+ * This example uses the CLI tool via ProcessBuilder
+ * 
+ * Prerequisites:
+ * - Java 8 or higher
+ * - JSON library (org.json) - Add to your project:
+ *   Maven: <dependency><groupId>org.json</groupId><artifactId>json</artifactId><version>20231013</version></dependency>
+ *   Gradle: implementation 'org.json:json:20231013'
+ * 
+ * Usage: java PatreonAuthExample <access_token> [tier_id]
+ * 
+ * Compile: javac -cp ".:json.jar" PatreonAuthExample.java
+ * Run: java -cp ".:json.jar" PatreonAuthExample <access_token> [tier_id]
+ */
+public class PatreonAuthExample {
+    
+    // Path to the CLI tool (adjust based on your platform)
+    private static final String CLI_PATH = getCliPath();
+    
+    /**
+     * Get the path to the CLI tool based on the operating system
+     */
+    private static String getCliPath() {
+        String os = System.getProperty("os.name").toLowerCase();
+        Path parentDir = Paths.get("").toAbsolutePath().getParent();
+        
+        if (os.contains("win")) {
+            return parentDir.resolve("build").resolve("Release").resolve("patreon_auth_cli.exe").toString();
+        } else {
+            return parentDir.resolve("build").resolve("patreon_auth_cli").toString();
+        }
+    }
+    
+    /**
+     * Result class for verification
+     */
+    public static class VerifyResult {
+        public boolean success;
+        public String message;
+        public String data;
+        
+        public VerifyResult(boolean success, String message) {
+            this.success = success;
+            this.message = message;
+            this.data = null;
+        }
+        
+        public VerifyResult(boolean success, String message, String data) {
+            this.success = success;
+            this.message = message;
+            this.data = data;
+        }
+    }
+    
+    /**
+     * Verify Patreon member status
+     * 
+     * @param accessToken Patron's/user's OAuth2 access token
+     * @param tierId Optional tier ID (0 for any tier)
+     * @return VerifyResult with verification status
+     */
+    public static VerifyResult verifyMember(String accessToken, int tierId) throws Exception {
+        List<String> command = new ArrayList<>();
+        command.add(CLI_PATH);
+        command.add("--user-token");
+        command.add(accessToken);
+        
+        if (tierId > 0) {
+            command.add("--tier");
+            command.add(String.valueOf(tierId));
+        }
+        
+        ProcessBuilder processBuilder = new ProcessBuilder(command);
+        processBuilder.redirectErrorStream(true);
+        
+        Process process = processBuilder.start();
+        
+        // Read output
+        StringBuilder output = new StringBuilder();
+        StringBuilder error = new StringBuilder();
+        
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(process.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                output.append(line).append("\n");
+            }
+        }
+        
+        try (BufferedReader errorReader = new BufferedReader(
+                new InputStreamReader(process.getErrorStream()))) {
+            String line;
+            while ((line = errorReader.readLine()) != null) {
+                error.append(line).append("\n");
+            }
+        }
+        
+        // Wait for process to complete with timeout
+        boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+        if (!finished) {
+            process.destroyForcibly();
+            throw new Exception("Request timeout");
+        }
+        
+        int exitCode = process.exitValue();
+        String outputStr = output.toString().trim();
+        String errorStr = error.toString().trim();
+        
+        switch (exitCode) {
+            case 0:
+                return new VerifyResult(true, "Member is active", outputStr);
+            case 1:
+                return new VerifyResult(false, "Member is not active or not subscribed");
+            case 2:
+                throw new IllegalArgumentException("Invalid input parameters");
+            case 3:
+                throw new Exception("Network error");
+            case 4:
+                throw new IllegalArgumentException("Invalid or expired token");
+            case 5:
+                throw new Exception("Invalid API response");
+            case 6:
+                throw new OutOfMemoryError("Memory allocation error");
+            default:
+                throw new Exception(errorStr.isEmpty() ? "Unknown error" : errorStr);
+        }
+    }
+    
+    /**
+     * Get detailed member information
+     * 
+     * @param accessToken Patron's/user's OAuth2 access token
+     * @return JSONObject with member information
+     */
+    public static JSONObject getMemberInfo(String accessToken) throws Exception {
+        List<String> command = new ArrayList<>();
+        command.add(CLI_PATH);
+        command.add("--user-token");
+        command.add(accessToken);
+        command.add("--info");
+        
+        ProcessBuilder processBuilder = new ProcessBuilder(command);
+        processBuilder.redirectErrorStream(true);
+        
+        Process process = processBuilder.start();
+        
+        // Read output
+        StringBuilder output = new StringBuilder();
+        
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(process.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                output.append(line).append("\n");
+            }
+        }
+        
+        // Wait for process to complete with timeout
+        boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+        if (!finished) {
+            process.destroyForcibly();
+            throw new Exception("Request timeout");
+        }
+        
+        int exitCode = process.exitValue();
+        
+        if (exitCode == 0) {
+            try {
+                return new JSONObject(output.toString().trim());
+            } catch (org.json.JSONException e) {
+                throw new Exception("Invalid JSON response: " + e.getMessage());
+            }
+        } else {
+            throw new Exception("Failed to get member info");
+        }
+    }
+    
+    /**
+     * Check if user has access to a specific tier
+     * 
+     * @param accessToken Patron's/user's OAuth2 access token
+     * @param tierId Tier ID to check
+     * @return true if user has access, false otherwise
+     */
+    public static boolean checkTierAccess(String accessToken, int tierId) throws Exception {
+        VerifyResult result = verifyMember(accessToken, tierId);
+        return result.success;
+    }
+    
+    /**
+     * Main method for example usage
+     */
+    public static void main(String[] args) {
+        if (args.length < 1) {
+            System.err.println("Usage: java PatreonAuthExample <access_token> [tier_id]");
+            System.exit(1);
+        }
+        
+        String accessToken = args[0];
+        int tierId = args.length > 1 ? Integer.parseInt(args[1]) : 0;
+        
+        System.out.println("Verifying Patreon membership...\n");
+        
+        try {
+            // Basic verification
+            VerifyResult verifyResult = verifyMember(accessToken, tierId);
+            
+            if (verifyResult.success) {
+                System.out.println("✓ SUCCESS: User is an active Patreon member!");
+            } else {
+                System.out.println("X User is not an active member");
+                System.out.println("Message: " + verifyResult.message);
+            }
+            
+            // Get detailed member information
+            System.out.println("\nFetching detailed member information...");
+            JSONObject memberInfo = getMemberInfo(accessToken);
+            System.out.println("Member Info:");
+            System.out.println(memberInfo.toString(2));
+            
+            // Check specific tier access (example)
+            if (tierId == 0) {
+                System.out.println("\nChecking tier access (Tier ID: 12345)...");
+                boolean hasTierAccess = checkTierAccess(accessToken, 12345);
+                System.out.println("User " + (hasTierAccess ? "has" : "does not have") + 
+                                 " access to tier 12345");
+            }
+            
+        } catch (Exception e) {
+            System.err.println("Error: " + e.getMessage());
+            e.printStackTrace();
+            System.exit(1);
+        }
+    }
+}
+
