@@ -16,6 +16,19 @@ A universal C++ middleware library for verifying Patreon subscription status on 
 - ✅ **Type Safety**: Proper type conversions and memory management
 - ✅ **Cross-Platform**: Supports Windows (WinHTTP) and Linux/Unix (libcurl)
 
+## Common Use Cases
+
+This library is designed for creators who want to monetize their digital products  or provide exclusive content to Patreon supporters.
+
+*   **🎮 Game Launchers & Mods**: Verify a player's membership tier before allowing them to launch "Supporter-Only" builds or load premium game modifications/mods.
+*   **💻 Software & Desktop Applications**: Unlock "Premium" or "Pro" features in your software based on the user's active Patreon subscription.
+*   **📱 Mobile Applications**: Use the library (via C++ integration) to verify subscription status in high-performance Android or iOS apps.
+*   **🌐 Web Applications**: Secure your web app's backend APIs by verifying the patron's access token directly on your server before serving premium data.
+*   **🔒 License Management**: Use the built-in **HWID (Hardware ID)** binding to ensure that a single Patreon account isn't being shared across dozens of different computers.
+*   **🏅 Loyalty Offers**: Access subscription history to reward long-term patrons with exclusive items, lower prices or "Legacy" badges based on their lifetime support.
+*   **🛠️ CLI Tools & Automation**: Integrate Patreon verification into command-line tools for developers, artists, or researchers.
+
+
 ## Building
 
 ### Prerequisites
